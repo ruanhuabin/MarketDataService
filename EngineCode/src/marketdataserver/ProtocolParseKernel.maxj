@@ -1,0 +1,295 @@
+package marketdataserver;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.Reductions;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.IO.DelimiterMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.IO.NonBlockingInput;
+import com.maxeler.maxcompiler.v2.kernelcompiler.stdlib.core.IO.NonBlockingMode;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.base.DFEVar;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStruct;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEStructType;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVector;
+import com.maxeler.maxcompiler.v2.kernelcompiler.types.composite.DFEVectorType;
+import com.maxeler.maxcompiler.v2.utils.Bits;
+import com.maxeler.maxcompiler.v2.utils.MathUtils;
+import com.maxeler.networking.v1.framed_kernels.ByteOrder;
+import com.maxeler.networking.v1.framed_kernels.FrameData;
+import com.maxeler.networking.v1.framed_kernels.FrameFormat;
+import com.maxeler.networking.v1.framed_kernels.FramedLinkType;
+import com.maxeler.networking.v1.framed_kernels.ThroughputFramedKernel;
+import com.maxeler.networking.v1.kernel_types.UDPOneToOneRXType;
+
+public class ProtocolParseKernel extends ThroughputFramedKernel {
+	public static final String frameInputName = "internal";
+	public static final String frameOutputName = "myOutput";
+
+	public static final int WORD_SIZE_BYTES = 8;
+
+	public static final OutputLinkType outputLinkType = new OutputLinkType();
+	public static class OutputLinkType extends DFEStructType implements FramedLinkType {
+		public OutputLinkType() {
+			super(
+					sft("data", dfeRawBits(64)),
+					sft("sof", dfeBool()),
+					sft("eof", dfeBool()),
+					sft("mod", dfeUInt(3))
+			);
+		}
+		@Override public String getEOF() { return "eof"; }
+		@Override public String getSOF() { return "sof"; }
+		@Override public String getData() {	return "data"; }
+		@Override public String getMod() { return "mod";	}
+		@Override public DFEStructType getDFEStructType() {	return this; }
+	}
+
+
+	private static class OutputFormat extends FrameFormat {
+		public OutputFormat() {
+			super(ByteOrder.LITTLE_ENDIAN);
+
+			addField("type", dfeUInt(8));
+			addField("chain", dfeUInt(8));
+			addField("fttype", dfeUInt(8));
+			addField("padding1", dfeUInt(8));
+			addField("contentLength", dfeUInt(16));
+
+			addField("padding2", dfeUInt(16));
+
+			addField("subjectID", dfeUInt(32));
+			addField("tid", dfeUInt(32));
+			addField("commPhaseNo", dfeUInt(32));
+			addField("sequenceNo", dfeUInt(32));
+			addField("frontSeqNo", dfeUInt(32));
+			addField("requestID", dfeUInt(32));
+			addField("sessionID", dfeUInt(32));
+
+			addField("frontID", dfeUInt(16));
+
+			addField("padding3", dfeUInt(16));
+
+			addField("groupID", dfeUInt(32));
+			addField("oldSubjectID", dfeUInt(32));
+			addField("convergenceID", dfeUInt(32));
+			addField("oldSequenceNo", dfeUInt(32));
+
+			addField("pubNodeID", dfeUInt(16));
+			addField("riskID", dfeUInt(16));
+			addField("matchID", dfeUInt(16));
+
+			addField("padding4", dfeUInt(16));
+
+			addField("errorID", dfeUInt(32));
+
+			addField("content", dfeRawBits(32*8));
+
+		}
+	}
+
+	ProtocolParseKernel(KernelParameters parameters) {
+		super(parameters);
+
+		UDPOneToOneRXType udpType = new UDPOneToOneRXType();
+		DFEStructType inputType = udpType.getDFEStructType();
+
+		NonBlockingInput<DFEStruct> theInput = io.nonBlockingInput(frameInputName, inputType,
+				constant.var(true),
+				inputType.getPositionForField(udpType.getEOF()),
+				DelimiterMode.EOF_POSITION,
+  				3,
+				NonBlockingMode.NO_TRICKLING);
+
+		DFEStruct inputStruct = theInput.data;
+		DFEVar valid = theInput.valid;
+
+		DFEVar data = inputStruct.get(udpType.getData());
+		DFEVar sof = (DFEVar)inputStruct.get(udpType.getSOF()) & valid;
+
+
+		debug.simPrintf(sof, "\nbefore hold, data bits[%d]:\n", data.getType().getTotalBits());
+
+		for(int i = 0; i < data.getType().getTotalBits(); i ++)
+		{
+
+			debug.simPrintf(sof,"%d", data.slice(i));
+		}
+
+		debug.simPrintf(sof, "\n");
+
+		//Hold the whole xtp packet into superWord
+		DFEVar superWord = null;
+		for(int i = 20; i >= 0; i --)
+		{
+			DFEVar currentBytes = extractMaximumContent(stream.offset(data, i), 0, 8);
+			if( 20 == i )
+			{
+				superWord = currentBytes;
+			}
+			else
+			{
+				superWord = superWord # currentBytes;
+			}
+		}
+
+		/* Extract the xtp header from superWord*/
+		DFEVar type = Reductions.streamHold(superWord.slice(0, 8).cast(dfeUInt(8)), sof);
+		DFEVar chain = Reductions.streamHold(superWord.slice(8, 8).cast(dfeUInt(8)), sof);
+		DFEVar fttype = Reductions.streamHold(superWord.slice(16, 8).cast(dfeUInt(8)), sof);
+		DFEVar padding1 = Reductions.streamHold(superWord.slice(24, 8).cast(dfeUInt(8)), sof);
+		DFEVar contentLength = Reductions.streamHold(superWord.slice(32, 16).cast(dfeUInt(16)), sof);
+		DFEVar padding2 = Reductions.streamHold(superWord.slice(48, 16).cast(dfeUInt(16)), sof);
+		DFEVar subjectID = Reductions.streamHold(superWord.slice(64, 32).cast(dfeUInt(32)), sof);
+		DFEVar tid = Reductions.streamHold(superWord.slice(96, 32).cast(dfeUInt(32)), sof);
+		DFEVar commPhaseNo = Reductions.streamHold(superWord.slice(128, 32).cast(dfeUInt(32)), sof);
+		DFEVar sequenceNo = Reductions.streamHold(superWord.slice(160, 32).cast(dfeUInt(32)), sof);
+		DFEVar frontSeqNo = Reductions.streamHold(superWord.slice(192, 32).cast(dfeUInt(32)), sof);
+		DFEVar requestID = Reductions.streamHold(superWord.slice(224, 32).cast(dfeUInt(32)), sof);
+		DFEVar sessionID = Reductions.streamHold(superWord.slice(256, 32).cast(dfeUInt(32)), sof);
+		DFEVar frontID = Reductions.streamHold(superWord.slice(288, 16).cast(dfeUInt(16)), sof);
+		DFEVar padding3 = Reductions.streamHold(superWord.slice(304, 16).cast(dfeUInt(16)), sof);
+		DFEVar groupID = Reductions.streamHold(superWord.slice(320, 32).cast(dfeUInt(32)), sof);
+		DFEVar oldSubjectID = Reductions.streamHold(superWord.slice(352, 32).cast(dfeUInt(32)), sof);
+		DFEVar convergenceID = Reductions.streamHold(superWord.slice(384, 32).cast(dfeUInt(32)), sof);
+		DFEVar oldSequenceNo = Reductions.streamHold(superWord.slice(416, 32).cast(dfeUInt(32)), sof);
+		DFEVar pubNodeID = Reductions.streamHold(superWord.slice(448, 16).cast(dfeUInt(16)), sof);
+		DFEVar riskID = Reductions.streamHold(superWord.slice(464, 16).cast(dfeUInt(16)), sof);
+		DFEVar matchID = Reductions.streamHold(superWord.slice(480, 16).cast(dfeUInt(16)), sof);
+		DFEVar padding4 = Reductions.streamHold(superWord.slice(496, 16).cast(dfeUInt(16)), sof);
+		DFEVar errorID = Reductions.streamHold(superWord.slice(512, 32).cast(dfeUInt(32)), sof);
+
+		debug.simPrintf(sof, "Kernel got: contentLength = %x\n", contentLength);
+		debug.simPrintf(sof, "Kernel got: superWord bits num: %d\n", superWord.getType().getTotalBits());
+
+		debug.simPrintf(sof, "superword bits:\n");
+		for(int i = 0; i < superWord.getType().getTotalBits(); i ++)
+		{
+
+			debug.simPrintf(sof,"%d", superWord.slice(i));
+		}
+
+		debug.simPrintf(sof, "\ndata bits[%d]:\n", data.getType().getTotalBits());
+
+		for(int i = 0; i < data.getType().getTotalBits(); i ++)
+		{
+
+			debug.simPrintf(sof,"%d", data.slice(i));
+		}
+
+		debug.simPrintf(sof, "\n");
+
+
+		DFEVar xtpHeaderSize = constant.var(dfeUInt(MathUtils.bitsToAddress(68)), 68);
+		int xtpContentMaxSize = 32;
+		DFEVar contentSuperWord = removeHeader(superWord, xtpHeaderSize);
+		contentSuperWord = extractMaximumContent(contentSuperWord, 0, xtpContentMaxSize);
+		contentSuperWord = extractExactlyContent(contentLength.cast(dfeUInt(5)), contentSuperWord);
+		DFEVar content =Reductions.streamHold(contentSuperWord, sof);
+
+
+
+		OutputFormat outputFormat = new OutputFormat();
+		FrameData<OutputFormat> frameOut = new FrameData<OutputFormat>(
+				this,
+				outputFormat,
+				outputLinkType
+		);
+
+
+
+		frameOut["type"] <== type;
+		frameOut["chain"] <== chain;
+		frameOut["fttype"] <== fttype;
+		frameOut["padding1"] <== padding1;
+		frameOut["contentLength"] <== contentLength;
+
+		frameOut["padding2"] <== padding2;
+		frameOut["subjectID"] <== subjectID;
+		frameOut["tid"] <== tid;
+		frameOut["commPhaseNo"] <== commPhaseNo;
+		frameOut["sequenceNo"] <== sequenceNo;
+		frameOut["frontSeqNo"] <== frontSeqNo;
+		frameOut["requestID"] <== requestID;
+		frameOut["sessionID"] <== sessionID;
+		frameOut["frontID"] <== frontID;
+		frameOut["padding3"] <== padding3;
+		frameOut["groupID"] <== groupID;
+		frameOut["oldSubjectID"] <== oldSubjectID;
+		frameOut["convergenceID"] <== convergenceID;
+		frameOut["oldSequenceNo"] <== oldSequenceNo;
+		frameOut["pubNodeID"] <== pubNodeID;
+		frameOut["riskID"] <== riskID;
+		frameOut["matchID"] <== matchID;
+		frameOut["padding4"] <== padding4;
+		frameOut["errorID"] <== errorID;
+
+		frameOut["content"] <== content;
+
+
+		io.frameOutput(frameOutputName, frameOut, constant.var(true), sof);
+	}
+
+	private DFEVar extractExactlyContent(DFEVar sz, DFEVar v)
+	{
+		int numSignBits = v.getType().getTotalBits() / 8;
+		int maskSizeBytes = 1 << sz.getType().getTotalBits();
+
+		if (numSignBits != maskSizeBytes) {
+
+			throw new RuntimeException("Number of sign bits must be equal to the byte size of the mask!");
+		}
+
+		List<DFEVar> signBits = new ArrayList<DFEVar>(numSignBits);
+
+		for (int i=0; i < numSignBits; i++) {
+			signBits.add(i == 0 ? v.slice(numSignBits * 8 - 1) : v.slice(i* 8 - 1));
+		}
+
+		DFEVar theSignBit = control.mux(sz, signBits);
+
+
+		List<DFEVar> masks = new ArrayList<DFEVar>(maskSizeBytes);
+
+		for (int i=0; i < maskSizeBytes; i++)
+		{
+
+			DFEVar ones = constant.var(dfeRawBits((maskSizeBytes - i) * 8), Bits.allOnes((maskSizeBytes - i)*8));
+
+			if (i > 0) {
+				DFEVar zeros = constant.var(dfeRawBits(i * 8), Bits.allZeros(i*8));
+				masks.add(ones # zeros);
+			} else {
+				DFEVar zeros = constant.var(dfeRawBits(maskSizeBytes * 8), Bits.allZeros(maskSizeBytes*8));
+				masks.add(zeros);
+			}
+		}
+
+		DFEVar signmask = control.mux(sz, masks);
+		DFEVar mask = ~signmask;
+
+		v = v & mask;
+
+		v = v | (theSignBit ? signmask : 0);
+
+		return v;
+	}
+
+	private DFEVar extractMaximumContent(DFEVar v, int baseIndex, int howMany) {
+		return v.slice(baseIndex * 8, howMany * 8);
+	}
+
+	private DFEVar removeHeader(DFEVar v, DFEVar shiftAmount) {
+		int vecSize = v.getType().getTotalBits() / 8;
+		DFEVectorType<DFEVar> vecType = new DFEVectorType<DFEVar>(dfeRawBits(8), vecSize);
+		DFEVector<DFEVar> array = vecType.newInstance(this);
+		for (int i=0; i < vecSize; i++) {
+			array.get(i) <== v.slice(i*8, 8);
+		}
+
+		shiftAmount = shiftAmount.cast(dfeUInt(MathUtils.bitsToAddress(vecSize)));
+
+		return array.shiftElementsRight(shiftAmount).pack();
+	}
+}
+

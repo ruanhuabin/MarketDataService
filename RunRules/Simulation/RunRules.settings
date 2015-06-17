@@ -8,7 +8,7 @@
 <maxFiles>
 <maxFile buildName="MarketDataServer" buildOrUseExisting="build">
 <runConfiguration askBeforeAutoBuild="false">
-<mainClass>marketdataserver.MarketDataServerManager</mainClass>
+<mainClass>cn.edu.tsinghua.kernel.MarketDataServerManager</mainClass>
 <maxHeapSize>2</maxHeapSize>
 </runConfiguration>
 <selectEngineTarget enabled="false">VECTIS</selectEngineTarget>

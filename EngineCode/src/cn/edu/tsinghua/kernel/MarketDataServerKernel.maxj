@@ -1,4 +1,4 @@
-package marketdataserver;
+package cn.edu.tsinghua.kernel;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelParameters;
 import com.maxeler.networking.v1.framed_kernels.ByteOrder;

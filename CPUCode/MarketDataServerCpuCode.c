@@ -52,12 +52,12 @@ typedef struct XTPPacket_s
 void printXTPPacket(const XTPPacket_t *xtpPacket)
 {
 	printf("------------------XTP Packet Start---------------------------\n");
-	printf("Type: %x\n", xtpPacket->type);
-	printf("Chain: %x\n", xtpPacket->chain);
-	printf("FTType: %x\n", xtpPacket->fttype);
-	printf("Padding1: %x\n", xtpPacket->padding1);
+	printf("Type: %#x\n", xtpPacket->type);
+	printf("Chain: %#x\n", xtpPacket->chain);
+	printf("FTType: %#x\n", xtpPacket->fttype);
+	printf("Padding1: %#x\n", xtpPacket->padding1);
 	printf("ContentLength: %x\n", xtpPacket->contentLength);
-	printf("Padding2: %x\n", xtpPacket->padding2);
+	printf("Padding2: %#x\n", xtpPacket->padding2);
 	printf("SubjectID: %#010x\n", xtpPacket->subjectID);
 	printf("Tid: %#010x\n", xtpPacket->tid);
 	printf("CommPhaseNo: %#010x\n", xtpPacket->commPhaseNo);
@@ -65,18 +65,24 @@ void printXTPPacket(const XTPPacket_t *xtpPacket)
 	printf("FrontSeqNo: %#010x\n", xtpPacket->frontSeqNo);
 	printf("RequestID: %#010x\n", xtpPacket->requestID);
 	printf("SessionID: %#010x\n", xtpPacket->sessionID);
-	printf("FrontID: %x\n", xtpPacket->frontID);
-	printf("Padding3: %x\n", xtpPacket->padding3);
+	printf("FrontID: %#x\n", xtpPacket->frontID);
+	printf("Padding3: %#x\n", xtpPacket->padding3);
 	printf("GroupID: %#010x\n", xtpPacket->groupID);
 	printf("OldSubjectID: %#010x\n", xtpPacket->oldSubjectID);
 	printf("ConvergenceID: %#010x\n", xtpPacket->convergenceID);
 	printf("OldSequenceID: %#010x\n", xtpPacket->oldSequenceNo);
-	printf("PubNodeID: %x\n", xtpPacket->pubNodeID);
-	printf("RiskID: %x\n", xtpPacket->riskID);
-	printf("MatchID: %x\n", xtpPacket->matchID);
-	printf("Padding4: %x\n", xtpPacket->padding4);
+	printf("PubNodeID: %#x\n", xtpPacket->pubNodeID);
+	printf("RiskID: %#x\n", xtpPacket->riskID);
+	printf("MatchID: %#x\n", xtpPacket->matchID);
+	printf("Padding4: %#x\n", xtpPacket->padding4);
 	printf("ErrorID: %#010x\n", xtpPacket->errorID);
-	printf("content:%s\n", xtpPacket->content);
+	//printf("content:%s\n", xtpPacket->content);
+	printf("Content:");
+	for(int i = 0; i < xtpPacket->contentLength; i ++)
+	{
+		printf("%02x ", xtpPacket->content[i]);
+	}
+	printf("\n");
 	printf("------------------XTP Packet Finish--------------------------\n");
 }
 
@@ -92,7 +98,7 @@ int main(int argc, char *argv[]) {
 	inet_aton(argv[2], &remote_ip);
 	struct in_addr netmask;
 	inet_aton("255.255.255.0", &netmask);
-	const int port = 1000;
+	const int port = 45678;
 
 //	struct in_addr mcastaddr;
 //	inet_aton("224.0.0.1", &mcastaddr);
@@ -139,11 +145,11 @@ int main(int argc, char *argv[]) {
 			printf("CPU: Got output frame %zd - size %zd bytes\n", numMessageRx, fsz);
 
 			uint8_t *w = f;
-			for (size_t i=0; i < 68; i++)
-			{
-				printf("Frame [%zd] Word[%zd]: 0x%lx\n", numMessageRx, i, w[i]);
-				//printf("Frame [%zd] Word[%zd]: %d\n", numMessageRx, i, w[i]);
-			}
+//			for (size_t i=0; i < 68; i++)
+//			{
+//				printf("Frame [%zd] Word[%zd]: 0x%02x\n", numMessageRx, i, w[i]);
+//				//printf("Frame [%zd] Word[%zd]: %d\n", numMessageRx, i, w[i]);
+//			}
 			memcpy(&xtpPacket, w, sizeof(XTPPacket_t));
 			printXTPPacket(&xtpPacket);
 			max_framed_stream_discard(toCpu, 1);

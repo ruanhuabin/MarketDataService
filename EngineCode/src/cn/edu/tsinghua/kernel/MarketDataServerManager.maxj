@@ -1,4 +1,4 @@
-package marketdataserver;
+package cn.edu.tsinghua.kernel;
 
 import com.maxeler.maxcompiler.v2.kernelcompiler.KernelConfiguration;
 import com.maxeler.maxcompiler.v2.managers.BuildConfig;
@@ -29,6 +29,7 @@ public class MarketDataServerManager extends NetworkManager {
 //		myKernelConfig.debug.setEnableLatencyAnnotation(true);
 //		myKernelConfig.debug.setEnableLongestPathAnnotation(SignExtKernel.INPUT_INTERNAL, SignExtKernel.OUTPUT_MY_OUTPUT);
 		KernelBlock kernel = addKernel(new ProtocolParseKernel(makeKernelParameters("exampleKernel", myKernelConfig)));
+		//KernelBlock kernel = addKernel(new FieldAccumulatorKernel(makeKernelParameters("exampleKernel", myKernelConfig)));
 		kernel.getInput(ProtocolParseKernel.frameInputName) <== frameIn.getReceiveStream();
 		addFramedStreamToCPU("toCPU", ProtocolParseKernel.outputLinkType) <== kernel.getOutput(ProtocolParseKernel.frameOutputName);
 	}

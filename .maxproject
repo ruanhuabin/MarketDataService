@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <maxCompilerManager version="2">
-<enginePart internalEngineSubproject="MarketDataServer_EngineCode" isSrcBin="false" isUseDefaultSelected="false" outputLocation="/MarketDataServer_EngineCode/bin" projectName="MarketDataServer"/>
-<cpuPart internalCpuSubproject="MarketDataServer_CPUCode"/>
+<enginePart internalEngineSubproject="MarketDataServer-NoBlockingIO_EngineCode" isSrcBin="false" isUseDefaultSelected="false" outputLocation="/MarketDataServer-NoBlockingIO_EngineCode/bin" projectName="MarketDataServer-NoBlockingIO"/>
+<cpuPart internalCpuSubproject="MarketDataServer-NoBlockingIO_CPUCode"/>
 <watchedFiles/>
 </maxCompilerManager>
